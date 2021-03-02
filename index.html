@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>CELERITY</title>
+    <!-- <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@200;300;400;500;700&display=swap" rel="stylesheet"> -->
+    <link href="https://fonts.googleapis.com/css2?family=Raleway:wght@200;300;400;600&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/@mdi/font@^4.0.0/css/materialdesignicons.min.css" rel="stylesheet" type="text/css">
+    <link href="https://cdn.jsdelivr.net/npm/animate.css@^3.5.2/animate.min.css" rel="stylesheet" type="text/css">
+    <link href="https://cdn.jsdelivr.net/npm/quasar@1.9.16/dist/quasar.min.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+    <script src="https://cdn.jsdelivr.net/npm/vue@^2.0.0/dist/vue.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/quasar@1.11.3/dist/quasar.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/quasar@1.11.3/dist/icon-set/mdi-v4.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.24.0/moment.min.js" ></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.15/lodash.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.8.4/Sortable.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Vue.Draggable/2.20.0/vuedraggable.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+    <script src="includes/vue-touch.min.js"></script>
+    <script src="includes/base64-binary.js"></script>
+    <script src="includes/drawaudio.js"></script>
+
+    <script>
+        Quasar.iconSet.set(Quasar.iconSet.mdiV4)
+        var player = document.getElementById("player");
+        console.log(Quasar);
+    </script>
+
+    <div id="celerity" :class="celerity_bg">
+
+        <q-layout view="lHh lpR lFf">
+
+        <q-uploader label="" auto-upload ref="file_input" class="hidden" :factory="open_file"></q-uploader>
+
+        <q-header>
+            <div class="wave-holder relative-position" v-if="audio_file != null">
+                <q-btn size="lg" color="white" text-color="white" flat label="SONG" @click="celerity.$refs.file_input.pickFiles()"
+                    class="absolute-top-left q-ma-xs"></q-btn>
+                <v-touch @pan="event => position_update(event)" @tap="event => position_update(event)">
+                    <div class="player" v-if="audio_file != null" :style="{'left': currentPosition + '%'}"></div>
+                    <div class="markers">
+                        <div v-for="marker in markers" class="wave-marker"
+                            :style="{'left': (marker.start / duration * 100) + '%', 'width': (marker.end / duration * 100) - (marker.start / duration * 100) + 0 + '%' }">
+                        </div>
+                    </div>
+            
+                    <canvas id="wave"></canvas>
+                </v-touch>
+                <q-btn class="current-time absolute-bottom-left q-ma-sm" color="white" flat v-if="audio_file != null">
+                    {{moment.utc(currentTime*1000).format('mm:ss.SS')}}</q-btn>
+                <q-btn class="duration absolute-bottom-right q-ma-sm text-white" color="white" flat v-if="audio_file != null">
+                    {{moment.utc(duration*1000).format('mm:ss.SS')}}</q-btn>
+            </div>
+        </q-header>
+
+        <q-page-container>
+            
+            <q-page>
+
+                <div class="absolute-center text-center" v-if="audio_file == null">
+                <q-btn size="lg" color="grey-10" round outline unelevated text-color="grey-10" class="q-mb-md" icon="mdi-music-note-plus"
+                    @click="celerity.$refs.file_input.pickFiles()" class="text-bold"></q-btn><br/>
+                <span class="text-grey-10 text-h3 text-weight-thin">CELERITY</span>
+                </div>
+
+               
+                
+                
+
+                <!-- <audio
+                v-if="audio_file != null"
+                id="player"
+                @timeupdate="time_update"
+                @playing="playing = true"
+                @pause="playing = false" 
+                @durationchange="set_duration"
+                ref="player">
+                    <source :src="audio_file.name" type="audio/mpeg">
+                </audio> -->
+
+                <audio
+                id="player"
+                @timeupdate="time_update"
+                @playing="playing = true"
+                @pause="playing = false" 
+                @durationchange="set_duration"
+                ref="player"
+                :src="audio_file_raw">
+                </audio>
+
+
+               
+
+                <div class="row">
+                    <div class="col">
+
+                        <div class="q-mt-lg q-pa-md" drag-handle-selector=".column-drag-handle" v-if="markers.length > 0">
+                            <draggable
+                            :list="markers"
+                            :key="markers_update"
+                            group="markers_group"
+                            @start="drag = true"
+                            @end="console.log(markers[0].name)"
+                            handle=".handle"
+                            v-bind="drag_options">
+                                <q-card 
+                                v-for="(marker,index) in markers"
+                                :key="marker.id"
+                                class="q-mb-md" flat bordered :class="[{'bg-grey-2': current_marker == marker.id }, {'bg-grey-6': marker.selected == true}]"
+                                clickable
+                                >
+                                    
+                                    <div class="row">
+                                        <div class="col-auto handle q-py-md q-px-lg relative-position"><q-icon name="mdi-menu" class="absolute-center" size="md"></q-icon></div>
+                                        <div class="col">
+                                            <v-touch
+                                            @tap="play_marker(marker,index)"
+                                            :tap-options="{taps:2}"
+                                            @press="select_marker(marker,index)"
+                                            :press-options="{time:800}"
+                                            class="v-touch"
+                                            >
+                                                <div class="row q-mb-md">
+                                                    <div class="col q-px-sm q-py-xs text-caption">{{marker.name || 'Lorem ipsum...'}}</div>
+                                                </div>
+                                                <div class="row">
+                                                    
+                                                    <div class="col q-pa-xs text-h5" style="border: 1px solid #eee">
+                                                        <v-touch
+                                                        @pandown="change_time(index, 'start', 'down')"
+                                                        @panup="change_time(index, 'start', 'up')"
+                                                        >
+                                                            {{moment.utc(marker.start*1000).format('mm:ss.SS')}}
+                                                        </v-touch>
+                                                    </div>
+                                                    
+                                                    
+                                                    <div class="col q-pa-xs text-h5" style="border: 1px solid #eee">
+                                                        <v-touch
+                                                        @pandown="change_time(index, 'end', 'down')"
+                                                        @panup="change_time(index, 'end', 'up')"
+                                                        >
+                                                            <span v-if="marker.end != null">{{moment.utc(marker.end*1000).format('mm:ss.SS')}}</span>
+                                                            <span v-else>--:--.--</span>
+                                                        </v-touch>    
+                                                    </div>
+                                                    
+                                                </div>
+                                                
+                                            </v-touch>
+                                        </div>
+                                        <div class="col-auto relative-position q-py-md q-px-lg">
+                                            <q-btn icon="mdi-close" class="absolute-center" flat @click="delete_marker(marker,index)"></q-btn>
+                                        </div>
+                                    </div>
+                                    
+                                </q-card>
+
+                                <!-- <q-slide-item v-for="(marker,index) in markers">
+                                    <template v-slot:right>
+                                        <q-icon name="mdi-delete"></q-icon>
+                                    </template>
+
+                                    <q-item>
+                                        <q-item-section avatar>
+                                            <div class="col-auto handle q-py-md q-px-lg relative-position" :class="'bg-' + marker.color"><q-icon name="mdi-menu" class="absolute-center" color="white" size="md"></q-icon></div>
+                                        </q-item-section>
+                                        <q-item-section>Only right action</q-item-section>
+                                    </q-item>
+                                </q-slide-item> -->
+                            </draggable>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- <q-inner-loading :showing="loading">
+                    <q-spinner-gears size="50px" color="primary"></q-spinner-gears>
+                </q-inner-loading> -->
+
+                
+
+
+            </q-page>
+
+            
+
+        </q-page-container>
+
+        <q-footer>
+
+            <div class="row" v-if="audio_file != null">
+                <div class="col">
+                    <q-btn-group spread outline>
+                        <q-btn size="lg" icon="mdi-contain-start" @click="add_marker_start" color="blue-grey-10" class="no-border-radius"></q-btn>
+                        <q-btn size="lg" icon="mdi-contain-end" @click="add_marker_end" color="blue-grey-10" class="no-border-radius"></q-btn>
+                        <q-btn-dropdown size="lg" color="blue-grey-10" class="no-border-radius" icon="" :label="speed_options[playback_speed]">
+                            <q-list>
+                                <q-item v-for="speed in speed_options" clickable v-close-popup>
+                                    <q-item-section>
+                                        <q-item-label>{{speed}}</q-item-label>
+                                    </q-item-section>
+                                </q-item>
+                            </q-list>
+                        </q-btn-dropdown>
+                        
+                    </q-btn-group>
+                </div>
+
+            </div>
+
+            <div class="row" v-if="audio_file != null">
+                <div class="col">
+                    <q-btn-group spread outline>
+                        <q-btn size="lg" icon="mdi-rewind"
+                            @click="celerity.$refs.player.currentTime = celerity.$refs.player.currentTime - 5"
+                            class="no-border-radius"></q-btn>
+                        <q-btn size="lg" icon="mdi-pause" @click="celerity.$refs.player.pause()" v-if="playing == true"
+                            class="no-border-radius" color="blue-grey-10"></q-btn>
+                        <q-btn size="lg" icon="mdi-play" @click="celerity.$refs.player.play()" v-else color="blue-grey-10"></q-btn>
+            
+                        <q-btn size="lg" icon="mdi-fast-forward"
+                            @click="celerity.$refs.player.currentTime = celerity.$refs.player.currentTime + 5"
+                            class="no-border-radius" color="blue-grey-10"></q-btn>
+                        <q-btn size="lg" icon="mdi-infinity" :color="loop ? 'cyan-10' : 'blue-grey-10'" @click="loop = !loop"
+                            class="no-border-radius"></q-btn>
+                    </q-btn-group>
+                </div>
+            </div>
+
+          
+           
+            
+            
+           
+
+        </q-footer>
+
+
+        </q-layout>
+
+        <q-dialog v-model="title_dialog" persistent>
+            <q-card>
+                <q-card-section class="row items-center">
+                    <q-input label="PROJECT TITLE" v-model="title" filled></q-input>
+                </q-card-section>
+
+                <q-card-actions align="right">
+                    <q-btn flat label="Cancel" color="primary" v-close-popup></q-btn>
+                    <q-btn flat label="Save" color="primary" @click="save_title"></q-btn>
+                </q-card-actions>
+            </q-card>
+        </q-dialog>
+
+        <q-dialog v-model="notes_dialog" persistent>
+            <q-card>
+                <q-card-section class="row items-center">
+                    <q-input label="PROJECT NOTES" v-model="notes" type="textarea" filled></q-input>
+                </q-card-section>
+
+                <q-card-actions align="right">
+                    <q-btn flat label="Cancel" color="primary" v-close-popup></q-btn>
+                    <q-btn flat label="Save" color="primary" @click="save_notes"></q-btn>
+                </q-card-actions>
+            </q-card>
+        </q-dialog>
+
+        <!-- <q-dialog v-model="marker_dialog" persistent>
+            <q-card>
+                <q-card-section class="row items-center">
+                    <q-input label="MARKER TITLE" v-model="markersnotes" filled></q-input>
+                </q-card-section>
+
+                <q-card-actions align="right">
+                    <q-btn flat label="Cancel" color="primary" v-close-popup></q-btn>
+                    <q-btn flat label="Save" color="primary" @click="save_notes"></q-btn>
+                </q-card-actions>
+            </q-card>
+        </q-dialog> -->
+
+    </div>
+    
+    
+    <script>
+    var celerity = new Vue({
+        el: '#celerity',
+        data: function () {
+            return {
+
+                /// UI STUFF
+                celerity_bg: 'bg-yellow-7',
+                left: false,
+                loading: false,
+                drag_options:  {
+                    animation: 200,
+                    group: "description",
+                    disabled: false,
+                    ghostClass: "ghost"
+                },
+                markers_update: 0,
+                title_dialog: false,
+                notes_dialog: false,
+                show_notes: false,
+                speed_options: [.5,.75,1,1.25,1.5,1.75,2],
+
+                /// CELERITY TRACKS
+                celerity_tracks: [],
+                active_track_index: null,
+
+                /// PLAYER STUFF
+                playing: false,
+                playback_speed: 2,
+                loop: false,
+                currentTime: 0,
+                currentPosition: 0,
+                duration: 0,
+
+                /// TRACK DETAILS
+                audio_file: null,
+                audio_file_raw: null,
+                title: 'CELERITY',
+                notes: null,
+                markers: [],
+
+                /// MARKERS STUFF
+                current_marker: null,
+                marker_start: null,
+                marker_end: null
+            }
+        },
+        beforeCreate() {
+            console.log('CELERITY ---- BEFORE CREATED');
+        },
+        created() {
+            console.log('CELERITY ---- CREATED');
+        },
+        beforeMount() {
+            console.log('CELERITY ---- BEFORE MOUNTED');
+        },
+        mounted() {
+            console.log('CELERITY ---- MOUNTED');
+            this.load_tracks();
+        },
+        beforeUpdate() {
+            console.log('CELERITY ---- BEFORE UPDATE');
+        },
+
+        methods: {
+            load_preferences() {
+                
+            },
+
+            load_tracks() {
+                
+                if ("celerity-tracks" in localStorage) {
+                    if (localStorage.getItem("celerity-tracks") != null) {
+                        this.celerity_tracks = JSON.parse(localStorage.getItem("celerity-tracks"));
+                    }
+                } else {
+                }
+            },
+
+            // FILE
+            open_file(files) {
+
+                celerity.audio_file = files[0];
+
+                var celerity_track = _.findIndex(celerity.celerity_tracks, { 'name': celerity.audio_file.name, 'lastModified': celerity.audio_file.lastModified, 'size': celerity.audio_file.size });
+
+                celerity.markers = [];
+
+                if(celerity_track > -1) {
+                    celerity.markers = celerity.celerity_tracks[celerity_track].markers;
+                    celerity.title = celerity.celerity_tracks[celerity_track].title;
+                    celerity.notes = celerity.celerity_tracks[celerity_track].notes;
+                    celerity.active_track_index = celerity_track;
+                } else {
+                    celerity.celerity_tracks.push({
+                        name: celerity.audio_file.name,
+                        lastModified: celerity.audio_file.lastModified,
+                        size: celerity.audio_file.size,
+                        title: null,
+                        notes: null,
+                        markers: []
+                    })
+                    if(celerity.celerity_tracks.length == 0) {
+                        celerity.active_track_index = 0;
+                    } else {
+                        celerity.active_track_index = celerity.celerity_tracks.length - 1;
+                    }
+                }
+
+                var file = files[0];
+                var reader = new FileReader();
+                reader.onloadend = function() {
+                    celerity.audio_file_raw = reader.result;
+                    // console.log(reader);
+                     drawAudio(reader.result);
+                }
+                reader.readAsDataURL(file);
+
+                celerity.celerity_bg = 'bg-white';
+                
+               
+
+            },
+
+
+            change_speed(direction) {
+                if(direction == 'right') {
+                    if(celerity.playback_speed < celerity.speed_options.length - 1) {
+                        celerity.playback_speed = celerity.playback_speed + 1;
+                    }
+                } else {
+                    if(celerity.playback_speed > 0) {
+                        celerity.playback_speed = celerity.playback_speed - 1;
+                    }
+                }
+                celerity.$refs.player.playbackRate = celerity.speed_options[celerity.playback_speed];
+            },
+            set_duration() {
+                celerity.duration = celerity.$refs.player.duration;
+            },
+            time_update() {
+                if(celerity.loop == true) {
+                    if(celerity.marker_start != null && celerity.marker_end != null) {
+                        if(celerity.$refs.player.currentTime >= celerity.marker_end) {
+                            celerity.$refs.player.currentTime = celerity.marker_start;
+                        }
+                    }
+                }
+                celerity.currentTime = celerity.$refs.player.currentTime;
+                celerity.currentPosition = celerity.currentTime / celerity.duration * 100;
+            },
+            position_update(event) {
+                console.log(event);
+                celerity.currentTime = celerity.duration*(event.center.x / document.getElementById("wave").clientWidth);
+                celerity.$refs.player.currentTime = celerity.currentTime;
+            },
+            add_marker_start() {
+                var id = celerity.random_string(40);
+                celerity.markers.push({
+                    id: id,
+                    start: celerity.currentTime,
+                    end: null,
+                    name: '',
+                    color: 'primary',
+                    selected: false
+                })
+                celerity.current_marker = id;
+                celerity.marker_start = celerity.currentTime;
+                celerity.marker_end = null;
+
+                celerity.update_storage();
+            },
+            add_marker_end() {
+                var current_marker = _.findIndex(celerity.markers, function(m) { return m.id == celerity.current_marker; });
+                celerity.markers[current_marker].end = celerity.currentTime;
+                celerity.marker_end = celerity.markers[current_marker].end;
+
+                celerity.update_storage();
+            },
+            play_marker(marker,index) {
+                celerity.current_marker = marker.id;
+                celerity.currentTime = marker.start;
+                celerity.marker_start = marker.start;
+                celerity.marker_end = marker.end;
+                celerity.currentPosition = celerity.currentTime / celerity.duration * 100;
+                celerity.$refs.player.currentTime = celerity.currentTime;
+                celerity.$refs.player.play();
+            },
+            select_marker(marker,index) {
+                
+            },
+            delete_marker(marker,index) {
+                var markers_temp = celerity.markers;
+                var removed_marker = _.pullAt(markers_temp, [index]);
+                celerity.markers = markers_temp;
+                celerity.markers_update =  celerity.markers_update + 1;
+
+                celerity.update_storage();
+            },
+
+            save_title() {
+                celerity.update_storage();
+                celerity.title_dialog = false;
+            },
+
+            save_notes() {
+                celerity.update_storage();
+                celerity.notes_dialog = false;
+            },
+
+            change_time(index, instance, direction) {
+
+                if(instance == 'start') { // START MARKER
+                    
+                    if(direction == 'up') { // MOVING FORWARD
+                        if(celerity.markers[index].end == null) {
+                            var limit = celerity.duration;
+                        } else {
+                            var limit = celerity.markers[index].end;
+                        }
+                        if(celerity.markers[index].start < limit) {
+                            celerity.markers[index].start = celerity.markers[index].start + .5;
+                            if(celerity.markers[index].start > limit) {
+                                celerity.markers[index].start = celerity.markers[index].start - .5;
+                            }
+                        } else { 
+                           
+                        }
+                    } else { // MOVING BACKWARDS
+                        if(celerity.markers[index].start > 0) {
+                            celerity.markers[index].start = celerity.markers[index].start - .5;
+                            if(celerity.markers[index].start < 0) {
+                                celerity.markers[index].start = 0;
+                            }
+                        } else { 
+                           
+                        }
+                    }
+
+                } else { // END MARKER
+
+                    if(direction == 'up') { // MOVING FORWARD
+                        if(celerity.markers[index].end < celerity.duration) {
+                            celerity.markers[index].end = celerity.markers[index].end + .5;
+                            if(celerity.markers[index].end > celerity.duration) {
+                                celerity.markers[index].end = celerity.duration;
+                            }
+                        } else { 
+                           
+                        }
+                    } else { // MOVING BACKWARDS
+                        var limit = celerity.markers[index].start;
+                        if(celerity.markers[index].end > limit) {
+                            celerity.markers[index].end = celerity.markers[index].end - .5;
+                            if(celerity.markers[index].end < limit) {
+                                celerity.markers[index].end = celerity.markers[index].start + .5;
+                            }
+                        } else { 
+                           
+                        }
+                    }
+
+                }
+                
+                if (celerity.current_marker == celerity.markers[index].id) {
+                    celerity.marker_start = celerity.markers[index].start;
+                    celerity.marker_end = celerity.markers[index].end;       
+                }
+
+                celerity.update_storage();
+                
+            },
+
+            /// STORAGE
+            update_storage() {
+                console.log(celerity.markers);
+                celerity.celerity_tracks[celerity.active_track_index].title = celerity.title;
+                celerity.celerity_tracks[celerity.active_track_index].notes = celerity.notes;
+                celerity.celerity_tracks[celerity.active_track_index].markers = celerity.markers;
+                localStorage.setItem("celerity-tracks", JSON.stringify(celerity.celerity_tracks));
+            },
+
+            /// UTILITIES
+            random_string(N) {
+                return Array(N+1).join((Math.random().toString(36)+'00000000000000000').slice(2, 18)).slice(0, N)
+            },
+        },
+    })
+    </script>
+
+    <style>
+
+        * {
+            /* font-family: 'Oswald', sans-serif; */
+            font-family: 'Raleway', sans-serif;
+        }
+
+        #celerity {
+            /* background-image: url('img/bg1.jpg'); */
+            /* background-size: cover; */
+        }
+
+        .player {
+            height: 100%;
+            border-right: 2px solid #03a9f4;
+            width: 0;
+            position: absolute;
+            top: 0;
+            z-index: 2;
+            height: 150px;
+        }
+
+        .wave-marker {
+            height: 150px;
+            position: absolute;
+            background-color: orange;
+            opacity: 0.2;
+            border: 1px solid orange;
+        }
+
+        .current-time, .duration {
+            font-size: 1.4em;
+            z-index: 3;
+        }
+
+        canvas {
+            width: 100%;
+            height: 150px;
+            background: #333;
+            display: block
+        }
+
+        .v-touch {
+            width: 100%
+        }
+
+
+
+
+
+
+        .no-move {
+            transition: transform 0s;
+        }
+        .ghost {
+            opacity: 0;
+        }
+    </style>
+
+</body>
+</html>
